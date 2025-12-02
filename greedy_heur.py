@@ -9,6 +9,8 @@ def solve_cvrp_instance_insertion_heur(capacitiy: np.uint16, x: np.ndarray, y: n
     depot = 0
     unvisited = []
     tours = []
+    lengths = []
+    loads = []
 
     for i in range(1, n_nodes):
         unvisited.append(int(i))
@@ -79,10 +81,12 @@ def solve_cvrp_instance_insertion_heur(capacitiy: np.uint16, x: np.ndarray, y: n
                 min_demand = get_min_demand(unvisited, demand)
 
         tours.append(np.asarray(current_tour, dtype=np.uint16))
+        lengths.append(tour_length)
+        loads.append(capacitiy - remaining_capacity)
         print(current_tour)
         print(tour_length)
 
-    return tours
+    return tours, lengths, loads
 
 
 @njit
