@@ -1,7 +1,6 @@
 import numpy as np
 from numba import njit
 
-
 @njit
 def solve_cvrp_instance_insertion_heur(capacitiy: np.uint16, x: np.ndarray, y: np.ndarray, demand: np.ndarray):
     
