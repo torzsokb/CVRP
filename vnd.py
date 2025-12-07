@@ -248,6 +248,74 @@ def take_customer_from_other_route_first_impr(distances: np.ndarray, solution: l
                     
     return False
                     
+@njit
+def swap_customers_between_routes2(distances: np.ndarray, solution: list[np.ndarray], demand: np.ndarray, lengths: list[np.float64], loads: list[np.uint16], capacity: np.uint16) -> bool:
+    
+    savings = np.zeros(len(demand), dtype=np.float64)
+    leftover_caps = np.zeros(len(demand), dtype=np.uint16)
+    candidate_route_indices = np.zeros(len(demand), dtype=np.uint16)
+    candidate_routes = []
+
+    for r, route in enumerate(solution):
+        for pos in range(1, len(route) - 1):
+
+            node = route[pos]
+            savings[node] = node_removal_saving(distances, route, pos)
+            leftover_caps[node] = capacity - loads[r] + demand[node]
+            candidate_route = []
+
+            for i in range(len(route)):
+                if not i == pos:
+                    candidate_route.append(route[i])
+
+            candidate_route_indices[node] = len(candidate_routes)
+            candidate_routes.append(np.asarray(candidate_route, dtype=np.uint16))
+
+
+    for r1, route1 in enumerate(solution):
+        for r2, route2 in enumerate(solution):
+            
+            if r2 <= r1:
+                continue
+
+            for pos1 in range(1, len(route1) - 1):
+                node1 = route1[pos1]
+                node2_max_demand = leftover_caps[node1]
+                saving_route1 = savings[node1]
+
+                for pos2 in range(1, len(route2) - 1):
+                    node2 = route2[pos2]
+                    node1_max_demand = leftover_caps[node2]
+                    saving_route2 = savings[node2]
+
+                    if node1_max_demand < demand[node1] or node2_max_demand < demand[node2]:
+                        continue
+
+                    new_route1 = candidate_routes[candidate_route_indices[node1]]
+                    new_route2 = candidate_routes[candidate_route_indices[node2]]
+
+                    idx_route1, cost_route1 = min_insertion_cost_arr(distances, new_route1, node2)
+                    idx_route2, cost_route2 = min_insertion_cost_arr(distances, new_route2, node1)
+
+                    if saving_route1 + saving_route2 > cost_route1 + cost_route2:
+
+                        new_route1 = insert_numba(new_route1, idx_route1, node2)
+                        new_route2 = insert_numba(new_route2, idx_route2, node1)
+
+                        loads[r1] -= demand[node1]
+                        loads[r1] += demand[node2]
+                        loads[r2] -= demand[node2]
+                        loads[r2] += demand[node1]
+
+                        lengths[r1] = route_length(distances, new_route1)
+                        lengths[r2] = route_length(distances, new_route2)
+
+                        solution[r1] = new_route1
+                        solution[r2] = new_route2
+
+                        return True
+    return False
+
 def swap_customers_between_routes(distances: np.ndarray, solution: list[np.ndarray], demand: np.ndarray, lengths: list[np.float64], loads: list[np.uint16], capacity: np.uint16) -> bool:
     
     candidate_routes = {}
@@ -326,7 +394,7 @@ def swap_customers_between_routes(distances: np.ndarray, solution: list[np.ndarr
 
     return False
 
-
+@njit
 def solve_cvrp_vnd(capacitiy: np.uint16, x: np.ndarray, y: np.ndarray, demand: np.ndarray, max_iter: np.uint16):
 
     solution, lengths, loads, distances = solve_cvrp_instance_insertion_heur(capacitiy=capacitiy, x=x, y=y, demand=demand)
@@ -339,7 +407,7 @@ def solve_cvrp_vnd(capacitiy: np.uint16, x: np.ndarray, y: np.ndarray, demand: n
         if not relocate_customer_within_route(distances=distances, solution=solution, lengths=lengths, loads=loads):
             continue
 
-        if not swap_customers_between_routes(distances=distances, solution=solution, demand=demand, lengths=lengths, loads=loads, capacity=capacitiy):
+        if not swap_customers_between_routes2(distances=distances, solution=solution, demand=demand, lengths=lengths, loads=loads, capacity=capacitiy):
             break
      
 
