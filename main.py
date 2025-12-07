@@ -124,9 +124,9 @@ def run_instance(instance_number: int, plot_instance: bool=True):
     if plot_instance:
          plot_instance_data(instance_number, n_nodes, capacity, x, y, demand, routes, lengths, loads)
 
-    # routes, lengths, loads = solve_cvrp_vnd(capacitiy=capacity, x=x, y=y, demand=demand, max_iter=1000)
-    # if plot_instance:
-    #      plot_instance_data(instance_number, n_nodes, capacity, x, y, demand, routes, lengths, loads)
+    routes, lengths, loads = solve_cvrp_vnd(capacitiy=capacity, x=x, y=y, demand=demand, max_iter=1000)
+    if plot_instance:
+         plot_instance_data(instance_number, n_nodes, capacity, x, y, demand, routes, lengths, loads)
     
     
     

@@ -88,8 +88,8 @@ def get_distances(x: np.ndarray, y: np.ndarray) -> np.ndarray:
 def relocate_customer_within_route(distances: np.ndarray, solution: list[np.ndarray], lengths: list[np.float64], loads: list[np.uint16]) -> bool:
     for r, route in enumerate(solution):
         for position in range(1, len(route) - 1): # route starts and ends with 0
-            new_pos, saving = max_reinsertion_saving(distances=distances, route=route, current_pos=position)
-            if new_pos > 0 and saving > 0:
+            new_pos, saving = max_reinsertion_saving2(distances=distances, route=route, current_pos=position)
+            if new_pos > 0 and saving > 0 and new_pos != position:
                 node = route[position]
                 new_route = np.zeros(len(route), dtype=np.uint16)
                 for i in range(1, len(route) - 1):
@@ -110,10 +110,11 @@ def relocate_customer_within_route(distances: np.ndarray, solution: list[np.ndar
                             new_route[i]= route[i]
                 
                 solution[r] = new_route
+                # this looks inefficient but small numerical errors add over many iterations
                 lengths[r] = route_length(distances=distances, route=new_route)
+                # lengths[r] -= saving
                 return True
                 
-    
     return False
         
 @njit
@@ -166,10 +167,8 @@ def max_reinsertion_saving(distances: np.ndarray, route: np.ndarray, current_pos
     node = route[current_pos]
     best_pos = -1
     max_saving = 0.0
-    
-    predecessor = route[current_pos-1]
-    successor = route[current_pos+1]
-    saving = distances[predecessor, node] + distances[node, successor] - distances[predecessor,successor]
+    saving = node_removal_saving(distances=distances, route=route, position=current_pos)
+
 
     for pos in range(1, len(route)-1):
         if pos == current_pos or pos == current_pos + 1:
@@ -178,16 +177,29 @@ def max_reinsertion_saving(distances: np.ndarray, route: np.ndarray, current_pos
         reinsertion_cost = distances[route[pos-1], node] + distances[node, route[pos]] - distances[route[pos-1], route[pos]]
         total_saving = saving - reinsertion_cost
         if total_saving > max_saving:
-            best_pos = pos
-            max_saving = total_saving
+            # best_pos = pos
+            # max_saving = total_saving
+            return pos, total_saving
 
     return best_pos, max_saving
+
+@njit
+def max_reinsertion_saving2(distances: np.ndarray, route: np.ndarray, current_pos: np.uint16):
+    saving = node_removal_saving(distances=distances, route=route, position=current_pos)
+    r_list = []
     
+    for i in range(len(route)):
+        if not i == current_pos:
+            r_list.append(route[i])
+
+    index, cost = min_insertion_cost_list(distances=distances, route=r_list, candidate_node=route[current_pos])
+    if saving - cost > 0:
+        return index, cost
+    return -1, 0.0
 
 @njit
 def node_removal_saving(distances: np.ndarray, route: np.ndarray, position: np.uint16) -> np.float64:
     return distances[route[position-1], route[position]] + distances[route[position], route[position+1]] - distances[route[position-1], route[position+1]]
-
 
 @njit
 def take_customer_from_other_route_first_impr(distances: np.ndarray, solution: list[np.ndarray], demand: np.ndarray, lengths: list[np.float64], loads: list[np.uint16], capacity: np.uint16) -> bool:
@@ -236,18 +248,101 @@ def take_customer_from_other_route_first_impr(distances: np.ndarray, solution: l
                     
     return False
                     
+def swap_customers_between_routes(distances: np.ndarray, solution: list[np.ndarray], demand: np.ndarray, lengths: list[np.float64], loads: list[np.uint16], capacity: np.uint16) -> bool:
+    
+    candidate_routes = {}
+
+    for r, route in enumerate(solution):
+        
+        route_dict = {
+            "nodes": [route[i] for i in range(1, len(route) - 1)],
+            "remaining_cap": capacity - loads[r],
+            "without_node" : {}
+            }
+        
+        for pos in range(1, len(route) - 1):
+
+            without_node = {
+                "remaining_cap": capacity - loads[r] + demand[route[pos]],
+                "saving": node_removal_saving(distances, route, pos),
+                "new_route": [route[i] for i in range(len(route)) if not i == pos]
+            }
+
+            route_dict["without_node"][route[pos]] = without_node
+
+        candidate_routes[r] = route_dict
+
+
+    for r1, route1 in enumerate(solution):
+    
+        for r2, route2 in enumerate(solution):
+            
+            if r2 <= r1:
+                continue
+
+            for node1 in candidate_routes[r1]["nodes"]:
+
+                node2_max_demand = candidate_routes[r1]["without_node"][node1]["remaining_cap"]
+                saving_route1 = candidate_routes[r1]["without_node"][node1]["saving"]
+
+                for node2 in candidate_routes[r2]["nodes"]:
+
+                    node1_max_demand = candidate_routes[r2]["without_node"][node2]["remaining_cap"]
+                    saving_route2 = candidate_routes[r2]["without_node"][node2]["saving"]
+                    
+                    if node2_max_demand < demand[node2] or node1_max_demand < demand[node1]:
+                        continue
+
+                    new_route1 = candidate_routes[r1]["without_node"][node1]["new_route"]
+                    new_route2 = candidate_routes[r2]["without_node"][node2]["new_route"]
+
+                    idx_route1, cost_route1 = min_insertion_cost_list(distances, new_route1, node2)
+                    idx_route2, cost_route2 = min_insertion_cost_list(distances, new_route2, node1)
+
+                    if cost_route1 + cost_route2 < saving_route1 + saving_route2:
+
+                        new_route1.insert(idx_route1, node2)
+                        new_route2.insert(idx_route2, node1)
+
+                        arr1 = np.asarray(new_route1, dtype=np.uint16)
+                        arr2 = np.asarray(new_route2, dtype=np.uint16)
+
+                        # This is the dumbest piece of code i have ever written but for some reason this was the only way to ensure correct data types for numba
+                        for r in range(len(solution)):
+                            if r == r1:
+                                loads[r] = np.uint16(sum(demand[i] for i in new_route1))
+                            elif r == r2:
+                                loads[r] = np.uint16(sum(demand[i] for i in new_route2))
+                            else:
+                                loads[r] = np.uint16(capacity - candidate_routes[r]["remaining_cap"])
+
+                        lengths[r1] = route_length(distances, arr1)
+                        lengths[r2] = route_length(distances, arr2)
+
+                        solution[r1] = arr1
+                        solution[r2] = arr2
+
+                        return True
+
+    return False
+
 
 def solve_cvrp_vnd(capacitiy: np.uint16, x: np.ndarray, y: np.ndarray, demand: np.ndarray, max_iter: np.uint16):
+
     solution, lengths, loads, distances = solve_cvrp_instance_insertion_heur(capacitiy=capacitiy, x=x, y=y, demand=demand)
 
     for i in range(max_iter):
-        improvement_found = take_customer_from_other_route_first_impr(distances=distances, solution=solution, demand=demand, lengths=lengths, loads=loads, capacity=capacitiy)
-        if improvement_found:
+
+        if take_customer_from_other_route_first_impr(distances=distances, solution=solution, demand=demand, lengths=lengths, loads=loads, capacity=capacitiy):
             continue
-        improvement_found = relocate_customer_within_route(distances=distances, solution=solution, lengths=lengths, loads=loads)
-     
-        if not improvement_found:
+
+        if not relocate_customer_within_route(distances=distances, solution=solution, lengths=lengths, loads=loads):
+            continue
+
+        if not swap_customers_between_routes(distances=distances, solution=solution, demand=demand, lengths=lengths, loads=loads, capacity=capacitiy):
             break
+     
+
 
     print(get_objective(distances=distances, solution=solution))
     return solution, lengths, loads
@@ -258,18 +353,26 @@ def insert_numba(arr: np.ndarray, idx: np.uint16, value: np.uint16):
     n = arr.shape[0]
     out = np.empty(n + 1, arr.dtype)
 
-    # copy before idx
     for i in range(idx):
         out[i] = arr[i]
 
-    # insert value
     out[idx] = value
 
-    # copy after idx
     for i in range(idx, n):
         out[i+1] = arr[i]
 
     return out
+
+@njit
+def reinstert(distances: np.ndarray, route: np.ndarray, old_pos: np.uint16, new_pos: np.uint16):
+    node = route[old_pos]
+    route_list = []
+    for i in range(len(route)):
+        if route[i] != node:
+            route_list.append(route[i])
+    return True
+
+   
 
 @njit
 def get_objective(distances: np.ndarray, solution: list[np.ndarray]):
@@ -285,3 +388,4 @@ def route_length(distances: np.ndarray, route: np.ndarray) -> np.float64:
     for i in range(1, len(route)):
         length += distances[route[i-1], route[i]]
     return length
+
