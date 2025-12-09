@@ -20,3 +20,16 @@ def read_instance_cvrp(path: str) -> tuple[np.uint16, np.uint16, np.ndarray, np.
             demand[i] = np.uint16(data[i + shift_demand].split(" ")[1])
 
         return n_nodes, capacity, x, y, demand
+    
+
+def save_solution(instance_number: int, solution: list[np.ndarray]) -> None:
+    
+    out = ""
+
+    for route in solution:
+        for i in range(len(route)):
+            out += f"{route[i]} "
+        out += "\n"
+
+    with open(f"outputs/solution_{instance_number}.txt", "w") as f:
+        f.write(out)

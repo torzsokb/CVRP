@@ -1,5 +1,5 @@
 import numpy as np
-from data_utils import read_instance_cvrp
+from data_utils import read_instance_cvrp, save_solution
 import plotly.graph_objects as go
 from cvrp_solver import solve_cvrp_vnd, solve_cvrp_grasp
 import pandas as pd
@@ -8,7 +8,7 @@ from itertools import permutations
 
 
 # INSTANCES = [1, 2, 3, 4, 5]
-INSTANCES = [2]
+INSTANCES = [5]
 NH_ORDER = [4, 1, 2, 3]
 
 def plot_instance_data(
@@ -162,12 +162,19 @@ def run_instance(instance_number: int, plot_instance: bool=True):
     # grasp
     print("grasp")    
 
+    nh_orders_for_grasp = [[4, 1, 2, 3], [3, 4, 1, 2], [2, 4, 3, 1]]
+
     solution_sizes = [50, 100, 500, 1000]
-    alphas = [0.3, 0.4]
+    alphas = [0.3]
     best_obj = 9999999
     best_alpha = 0.35
-    best_size = 900
+    best_size = 2000
     # best_nh_order = [2, 4, 1, 3]
+    best_solution = None
+    best_solution_iter = 0
+    best_solution_lengths = None
+    best_solution_loads = None
+
 
     # for solution_size in solution_sizes:
     #     for alpha in alphas:
@@ -188,9 +195,7 @@ def run_instance(instance_number: int, plot_instance: bool=True):
     #             best_size = solution_size
     #             best_obj = obj
 
-    for nh_order in nh_orders:
-        # if nh_order[0] == 4:
-        #     continue
+    for nh_order in nh_orders_for_grasp:
         for alpha in alphas:
             order = nh_order
 
@@ -210,17 +215,21 @@ def run_instance(instance_number: int, plot_instance: bool=True):
 
             print(f"nh order: {order}, obj: {obj:.2f}, alpha: {alpha}, time: {(end - start):.5f}")
 
-        # if obj < best_obj:
-        #     best_obj = obj
-        #     best_alpha = alpha
-            # best_nh_order = nh_order
+            if obj < best_obj:
+                best_obj = obj
+                best_alpha = alpha
+                best_nh_order = order
+                best_solution_lengths = lengths
+                best_solution = routes
+                best_solution_loads = loads
+                best_solution_iter = iter
 
 
 
     if plot_instance:
         # routes, lengths, loads, iter = solve_cvrp_grasp(capacitiy=capacity, x=x, y=y, demand=demand, max_iter_vnd=1000, num_initial_solutions=best_size, alpha=best_alpha, nh_order=order)
-        title = f"Instance {instance_number} GRASP Solution ({n_nodes} nodes, objectve: {obj:.2f}, n: {best_size}, alpha: {best_alpha}, iterations: {iter}, nh order: {NH_ORDER})"
-        plot_instance_data(n_nodes, x, y, demand, title, routes, lengths, loads)
+        title = f"Instance {instance_number} GRASP Solution ({n_nodes} nodes, objectve: {best_obj:.2f}, n: {best_size}, alpha: {best_alpha}, iterations: {best_solution_iter}, nh order: {best_nh_order})"
+        plot_instance_data(n_nodes, x, y, demand, title, best_solution, best_solution_lengths, best_solution_loads)
 
 
 
@@ -229,12 +238,13 @@ def run_instance(instance_number: int, plot_instance: bool=True):
     # with open(f"outputs/instance_{instance_number}_info.json", "w") as f:
     #     json.dump(info, f)
 
+    save_solution(instance_number, best_solution)
     
 
 
 def main():
     for instance in INSTANCES:    
-        run_instance(instance, plot_instance=False)
+        run_instance(instance, plot_instance=True)
 
 if __name__ == "__main__":
     main()
