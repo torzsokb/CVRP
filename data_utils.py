@@ -33,3 +33,25 @@ def save_solution(instance_number: int, solution: list[np.ndarray]) -> None:
 
     with open(f"outputs/solution_{instance_number}.txt", "w") as f:
         f.write(out)
+
+def reformat_solutions():
+    for i in range(1, 6):
+        new_solution = ""
+
+        with open(f"outputs/solution_{i}.txt", "r") as f:
+            old_solution = f.readlines()
+
+            for route in old_solution:
+                nodes = route.split()
+                for node in nodes:
+                    new_solution += f"{int(node) + 1} "
+                new_solution += "\n"
+
+        with open(f"outputs/solution_{i}.txt", "w") as f:
+            f.write(new_solution)
+
+def main():
+    reformat_solutions()
+
+if __name__ == "__main__":
+    main()
